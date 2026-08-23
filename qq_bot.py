@@ -99,9 +99,20 @@ class QQBot:
             return r
         return r
 
-    def reply(self, scene, target, msg_id, text):
-        """scene: 'c2c' | 'group'; target: openid / group_openid"""
+    def reply(self, scene, target, msg_id, text, at=None):
+        """scene: 'c2c' | 'group'; target: openid / group_openid
+        at: 要@的用户 openid(仅群聊生效, 私聊@无意义)"""
         seq = self.reply_seq.get(msg_id, 0) + 1
+        # 群聊带@: 先试 markdown(<@!openid> 可高亮@), 无权限则降级纯文本
+        if scene == "group" and at:
+            body = {"msg_type": 2, "content": f"<@!{at}> {text}",
+                    "msg_id": msg_id, "msg_seq": seq}
+            r = self.api_post(f"/v2/groups/{target}/messages", body)
+            if r.status_code == 200:
+                self.reply_seq[msg_id] = seq
+                return
+            log(f"[reply] md HTTP {r.status_code}, 降级纯文本")
+            seq += 1
         body = {"msg_type": 0, "content": text, "msg_id": msg_id, "msg_seq": seq}
         path = (f"/v2/users/{target}/messages" if scene == "c2c"
                 else f"/v2/groups/{target}/messages")
@@ -154,20 +165,22 @@ class QQBot:
             except Exception:
                 self.reply(scene, target, msg_id, "链接格式不对, 发完整的 auth 链接")
                 return
-
             key, cached, _ = cache_get(ticket)
             if cached:
                 self.reply(scene, target, msg_id,
-                           f"解卡成功\n{key}\n\nby CUA")
+                           f"解卡成功\n{key}\n\nby CUA", at=openid)
                 return
-            self.reply(scene, target, msg_id, "正在解卡😘")
+            self.reply(scene, target, msg_id,
+                       "欢迎使用由CUA部署的借卡机器人\n正在为您解卡", at=openid)
+            t0 = time.time()
             key, err, st = run_solves(ticket)
             if key:
                 cache_put(ticket, key, st)
+                dur = time.time() - t0
                 self.reply(scene, target, msg_id,
-                           f"解卡成功\n{key}\n\nby CUA")
+                           f"解卡成功\n{key}\n用时{dur:.1f}秒\n\nby CUA", at=openid)
             else:
-                self.reply(scene, target, msg_id, f"解卡失败: {err}")
+                self.reply(scene, target, msg_id, f"解卡失败: {err}", at=openid)
         except Exception as e:
             log(f"[solve] 异常: {type(e).__name__}: {e}")
             try:
