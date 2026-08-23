@@ -34,9 +34,9 @@ INTENTS = 1 << 25  # GROUP_AND_C2C_EVENT: C2C_MESSAGE_CREATE + GROUP_AT_MESSAGE_
 URL_RE = re.compile(r'https?://\S+')
 AT_RE = re.compile(r'^<@!\d+>\s*')
 
-HELP_TEXT = ("发送 Platoboost 链接自动解卡:\n"
-             "https://auth.platorelay.com/a?d=xxxx\n"
-             "求解约 7~10 秒, 结果自动回复。")
+HELP_TEXT = ("用法: /key <链接>\n"
+             "示例: /key https://auth.platorelay.com/a?d=xxxx\n"
+             "解卡约 7~10 秒, 结果自动回复。")
 
 
 def log(*a):
@@ -122,14 +122,16 @@ class QQBot:
         msg_id = d.get("id")
         openid = (d.get("author") or {}).get("id") or d.get("user_openid") or target
         content = AT_RE.sub("", (d.get("content") or "").strip()).strip()
-
+        # 必须以 /key 命令开头
+        if not content.startswith("/key"):
+            self.reply(scene, target, msg_id, HELP_TEXT)
+            return
         # 节流: 同一用户冷却窗口内忽略
         now = time.time()
         last = self.user_last.get(openid, 0)
         if now - last < self.cfg["user_cooldown"]:
             return
         self.user_last[openid] = now
-
         m = URL_RE.search(content)
         if not m:
             self.reply(scene, target, msg_id, HELP_TEXT)
@@ -156,17 +158,16 @@ class QQBot:
             key, cached, _ = cache_get(ticket)
             if cached:
                 self.reply(scene, target, msg_id,
-                           f"key (缓存秒回):\n{key}")
+                           f"解卡成功\n{key}\n\nby CUA")
                 return
-
-            self.reply(scene, target, msg_id, "求解中, 约 7~10 秒...")
+            self.reply(scene, target, msg_id, "正在解卡😘")
             key, err, st = run_solves(ticket)
             if key:
                 cache_put(ticket, key, st)
                 self.reply(scene, target, msg_id,
-                           f"key ({st:.1f}s):\n{key}")
+                           f"解卡成功\n{key}\n\nby CUA")
             else:
-                self.reply(scene, target, msg_id, f"求解失败: {err}")
+                self.reply(scene, target, msg_id, f"解卡失败: {err}")
         except Exception as e:
             log(f"[solve] 异常: {type(e).__name__}: {e}")
             try:

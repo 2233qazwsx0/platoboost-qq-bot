@@ -25,10 +25,10 @@ python qq_bot.py   # 首次运行生成 qq_config.json，填好后再跑
 
 | 场景 | 操作 |
 |---|---|
-| 私聊 | 直接发 Platoboost 链接 |
-| 群聊 | @机器人 + 链接 |
+| 私聊 | 发 `/key <Platoboost 链接>` |
+| 群聊 | @机器人 + `/key <链接>` |
 
-回复示例：`✅ 已解卡: eyJhbGciOi...`
+回复示例：`正在解卡😘` → `解卡成功 FREE_xxx... by CUA`
 
 ## 文件结构
 
