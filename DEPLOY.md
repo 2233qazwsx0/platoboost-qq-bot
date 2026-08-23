@@ -267,6 +267,7 @@ python qq_bot.py
 | `sandbox` | **未上线机器人必须 `true`**；正式上线后改 `false` |
 | `solve_workers` | 并发求解线程数，默认 4，一般不用改 |
 | `user_cooldown` | 同一用户两条消息最小间隔秒数，防刷屏 |
+| `admins` | 管理员 openid 数组；首个管理员用 `/whoami` 查到后手工填入 |
 
 **填写注意事项：**
 
@@ -287,6 +288,7 @@ venv\Scripts\python qq_bot.py
 # Linux / macOS（venv 激活状态下）
 python qq_bot.py
 ```
+（Windows 直接双击 `start_windows.bat`，机器人崩溃/更新后会自动重启）
 
 **正常启动输出：**
 
@@ -302,6 +304,8 @@ python qq_bot.py
 
 > ⚠️ 注意用 `venv\Scripts\python` 而不是系统的 `python`——依赖装在 venv 里，系统 Python 找不到会报 `ModuleNotFoundError`。
 
+**认领管理员**：给机器人发 `/whoami`，把回复里的 openid 填进 `qq_config.json` 的 `"admins": ["你的openid"]`，重启后即可使用管理命令。
+
 ---
 
 ## 9. 使用方法
@@ -310,7 +314,13 @@ python qq_bot.py
 |---|---|---|
 | 私聊 | 发 `/key <链接>` | "正在解卡😘" → "解卡成功 + 卡密 + by CUA" |
 | 群聊 | @机器人 + `/key <链接>` | 同上 |
-| 私聊/群 | 发其他文字 | 使用说明 |
+| 任何人 | `/whoami` | 回复自己的 openid（用于认领管理员） |
+| 管理员 | `/status` | 运行时长/WS 状态/缓存数/求解中/管理员数 |
+| 管理员 | `/update` | 从 GitHub 拉最新代码，有变更则自动重启生效 |
+| 管理员 | `/restart` | 手动重启 |
+| 管理员 | `/admin add <openid>` / `/admin rm <openid>` / `/admin ls` | 管理员增删查 |
+| 私聊/群 | 发其他 `/xxx` 命令 | 使用说明 |
+| 私聊/群 | 发不以 / 开头的普通文字 | 不回复 |
 
 命令格式：`/key https://auth.platorelay.com/a?d=xxxx`（`/key` 和链接之间有空格）。
 

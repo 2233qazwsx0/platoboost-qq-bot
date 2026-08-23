@@ -168,7 +168,7 @@ echo.
 REM ========== 步骤 7/8：生成并检查配置 ==========
 echo [7/8] 生成/检查配置文件...
 if not exist qq_config.json (
-    "!PY!" -c "import json;json.dump({'app_id':'','app_secret':'','sandbox':True,'solve_workers':4,'user_cooldown':10},open('qq_config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
+    "!PY!" -c "import json;json.dump({'app_id':'','app_secret':'','sandbox':True,'solve_workers':4,'user_cooldown':10,'admins':[]},open('qq_config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
     echo  [OK] 已生成 qq_config.json
 ) else (
     echo  [OK] qq_config.json 已存在，保留你的配置。
