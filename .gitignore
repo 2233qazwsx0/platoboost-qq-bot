@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 qq_config.json
 pb-qq-bot.zip
+
+bots.json
+.admin_pass
+.key_cache.json
+*.bak
+qq_bot.py.bak*
