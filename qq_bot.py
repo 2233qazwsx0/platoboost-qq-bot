@@ -60,6 +60,8 @@ HELP_TEXT = ("=== 可用指令 ===\n"
              "/admin ls  列出管理员")
 
 
+STOP_TEXT = ("此机器人已被停机\n"
+             "请找 3290274245 续费")
 def log(*a):
     global LOG_SEQ
     line = f"[{time.strftime('%H:%M:%S')}] " + " ".join(str(x) for x in a)
@@ -140,6 +142,15 @@ th{color:#8b949e;font-weight:400}
 .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px}
 .on{background:#1b4721;color:#3fb950}.off{background:#4a2020;color:#f85149}
 .warn{background:#4a3a10;color:#d29922}
+.adm{position:relative;display:inline-block}
+.adm summary{list-style:none;cursor:pointer;background:#161b22;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:6px 10px;font-size:13px}
+.adm summary:hover{border-color:#58a6ff}
+.adm-box{position:absolute;top:100%;left:0;margin-top:4px;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px;min-width:260px;z-index:10}
+.adm-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0}
+.adm-row code{color:#58a6ff;font-size:12px;word-break:break-all}
+.adm-row button{padding:2px 8px;font-size:12px}
+.adm-add{display:flex;gap:6px;margin-top:6px}
+.adm-add input{width:auto;flex:1;min-width:0}
 #msg{margin-top:10px;color:#3fb950;font-size:13px;min-height:20px}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
 .row input{flex:1;min-width:120px}
@@ -164,6 +175,7 @@ let pw=localStorage.getItem('pw')||'';
 document.getElementById('pw').value=pw;
 function savePw(){pw=document.getElementById('pw').value;localStorage.setItem('pw',pw);load()}
 function say(t,isErr){const m=document.getElementById('msg');m.textContent=t;m.style.color=isErr?'#f85149':'#3fb950'}
+async function apiNR(body){const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,pw})});const j=await r.json();if(r.status===401){say('密码错误',1);throw 0}if(j.error)say(j.error,1);else say(j.msg||'OK');return j}
 async function api(body){
   const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({...body,pw})});
@@ -173,17 +185,20 @@ async function api(body){
   load();return j;
 }
 async function admins(n){
-  const j=await api({action:'admins_ls',name:n});
+  const j=await apiNR({action:'admins_ls',name:n});
   if(!j||!j.admins)return;
-  const cur=(j.admins||[]).join("\n");
-  const op=prompt(n+' 当前管理员(一行一个 openid, 可直接增删后确认):', cur);
-  if(op===null)return;
-  const want=op.split(/\s*,\s*|\s+/).map(s=>s.trim()).filter(Boolean).map(s=>s.toUpperCase());
-  const have=(j.admins||[]).map(s=>s.toUpperCase());
-  for(const o of have){if(!want.includes(o)){await api({action:'admin_rm',name:n,openid:o})}}
-  for(const o of want){if(!have.includes(o)){await api({action:'admin_add',name:n,openid:o})}}
-  say('管理员已更新');
+  const list=(j.admins||[]).map(o=>`<div class="adm-row"><code>${o}</code><button class="danger" onclick="adminRm('${n}','${o}')">删除</button></div>`).join('')||'<div style="color:#8b949e">(暂无管理员)</div>';
+  document.getElementById('adm-m'+n).innerHTML=list;
 }
+async function adminAdd(n){
+  const inp=document.getElementById('adm-i'+n);
+  const oid=inp.value.trim().toUpperCase();
+  if(!oid){say('openid 必填',1);return}
+  await apiNR({action:'admin_add',name:n,openid:oid});
+  inp.value='';
+  admins(n);
+}
+async function adminRm(n,oid){await apiNR({action:'admin_rm',name:n,openid:oid});admins(n)}
 async function load(){
   if(!pw)return;
   try{
@@ -196,10 +211,14 @@ async function load(){
       <td><span class="badge ${b.running?'on':(b.expired?'warn':'off')}">${b.running?'运行中':(b.expired?'已过期':'已停止')}</span></td>
       <td>${b.expire_str}${b.expire_ts&&!b.expired?' <span style="color:#8b949e">('+Math.ceil((b.expire_ts*1000-Date.now())/86400000)+'天)</span>':''}</td>
       <td>
-        ${b.enabled?'<button onclick="act(\'stop\')">停止</button>':'<button onclick="act(\'start\')">启动</button>'}
+        ${b.enabled?'<button onclick="act(&#39;stop&#39;,&#39;'+b.name+'&#39;)">停止</button>':'<button onclick="act(&#39;start&#39;,&#39;'+b.name+'&#39;)">启动</button>'}
         <button onclick="renew('${b.name}')">续期</button>
         <button onclick="act('permanent','${b.name}')" title="清除有效期">永久</button>
-        <button onclick="admins('${b.name}')">管理员</button>
+        <details class="adm" ontoggle="if(this.open)admins('${b.name}')"><summary>管理员</summary>
+        <div class="adm-box">
+          <div id="adm-m${b.name}"></div>
+          <div class="adm-add"><input id="adm-i${b.name}" placeholder="输入 openid 添加"><button onclick="adminAdd('${b.name}')">添加</button></div>
+        </div></details>
         <button class="danger" onclick="del('${b.name}')">删除</button>
       </td></tr>`).join('')||'<tr><td colspan=5 style="color:#8b949e">暂无机器人</td></tr>';
   }catch(e){document.getElementById('st').textContent='连接失败'}
@@ -494,6 +513,7 @@ class QQBot:
         self.stop_event = threading.Event()   # 外部停止(删除/禁用/过期)
         self.started_at = time.time()
         self.updating = False          # /update 防重入
+        self.enabled = True            # 软停止: False 时在线但只回停机票
         self.pool = ThreadPoolExecutor(max_workers=cfg["solve_workers"],
                                        thread_name_prefix="solve")
         self.user_last = {}          # openid -> 上次受理时间(节流)
@@ -571,6 +591,9 @@ class QQBot:
         content = AT_RE.sub("", (d.get("content") or "").strip()).strip()
         msg_id = d.get("id")
         log(f"[msg] {t} from {openid}: {content[:50]}")
+        if not self.enabled:
+            self.reply(scene, target, msg_id, STOP_TEXT)
+            return
         # 必须以 /key 命令开头
         if not content.startswith("/"):
             self.reply(scene, target, msg_id, HELP_TEXT)
@@ -883,7 +906,13 @@ def save_bots():
 def start_bot(name):
     with BOTS_LOCK:
         entry = BOTS.get(name)
-        if not entry or entry["thread"] and entry["thread"].is_alive():
+        if not entry:
+            return
+        if entry["thread"] and entry["thread"].is_alive():
+            # 线程还活着(之前是软停止), 直接恢复
+            if entry["bot"]:
+                entry["bot"].enabled = True
+            log(f"[mgr] 已恢复 {name}")
             return
         bot = QQBot(entry["cfg"], name=name)
         entry["bot"] = bot
@@ -901,10 +930,8 @@ def stop_bot(name):
         bot, t = entry["bot"], entry["thread"]
         entry["bot"], entry["thread"] = None, None
     if bot:
-        bot.stop()
-    if t and t.is_alive():
-        t.join(timeout=8)
-    log(f"[mgr] 已停止 {name}")
+        bot.enabled = False
+        log(f"[mgr] 已软停止 {name} (在线置灰, 只回停机票)")
 
 
 def _expiry_ts(base_ts, days):
