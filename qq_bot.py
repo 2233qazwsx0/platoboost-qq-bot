@@ -833,11 +833,10 @@ class QQBot:
     def run_forever(self):
         while not self.stop_event.is_set():
             self.hb_stop.set()
-            # 有效期检查: 过期直接退出线程
+            # 有效期检查: 过期软停(在线回停机票), 不退出线程
             exp = self.cfg.get("expire_ts")
             if exp and time.time() > exp:
-                log(f"[{self.name}] 已过期, 停止运行")
-                return
+                self.enabled = False
             try:
                 gw = requests.get(
                     GATEWAY_URL, timeout=10,
