@@ -62,6 +62,41 @@ HELP_TEXT = ("=== 可用指令 ===\n"
 
 STOP_TEXT = ("此机器人已被停机\n"
              "请找 3290274245 续费")
+# ---------- 默认话术模板 (可被后台深度定制覆盖; 占位符 {key}{dur}{err}{openid}) ----------
+DEFAULT_MESSAGES = {
+    "welcome":   {"text": "欢迎使用由CUA部署的解卡机器人\n正在为您解卡", "img": ""},
+    "success":   {"text": "解卡成功\n{key}\n用时{dur}秒\n\nby CUA", "img": ""},
+    "success_cached": {"text": "解卡成功\n{key}\n\nby CUA", "img": ""},
+    "fail":      {"text": "解卡失败: {err}", "img": ""},
+    "bad_link":  {"text": "链接格式不对, 发完整的 auth 链接", "img": ""},
+    "busy":      {"text": "上一条还在解, 稍等~", "img": ""},
+    "whoami":    {"text": "你的 openid:\n{openid}", "img": ""},
+    "internal":  {"text": "内部错误, 稍后再试", "img": ""},
+    "no_admin":  {"text": "仅管理员可用 (用 /whoami 查 openid, 让站长加白)", "img": ""},
+    "admin_usage": {"text": "用法: /admin add <openid> | /admin rm <openid> | /admin ls", "img": ""},
+    "admin_added": {"text": "已加管理员: {openid}", "img": ""},
+    "admin_removed": {"text": "已移除: {openid}", "img": ""},
+    "admin_empty": {"text": "(空)", "img": ""},
+    "updating":   {"text": "正在更新中, 别急", "img": ""},
+    "update_start": {"text": "开始更新, 群发确认后重启...", "img": ""},
+    "update_fail": {"text": "更新失败: {err}", "img": ""},
+    "update_ok":  {"text": "已更新:\n{summary}\n2 秒后重启生效", "img": ""},
+    "restarting": {"text": "重启中...", "img": ""},
+    "help":       {"text": "=== 可用指令 ===\n"
+                          "【普通用户】\n"
+                          "/key <链接>  解卡(发 auth.platorelay.com 的链接)\n"
+                          "/whoami  查自己的 openid\n"
+                          "/help 或 /菜单  显示本清单\n"
+                          "【管理员】\n"
+                          "/status  查看状态\n"
+                          "/update  在线更新\n"
+                          "/restart  重启\n"
+                          "/admin add <openid>  加管理员\n"
+                          "/admin rm <openid>  移除管理员\n"
+                          "/admin ls  列出管理员", "img": ""},
+    "stop":       {"text": "此机器人已被停机\n请找 3290274245 续费", "img": ""},
+}
+MSG_KEYS = list(DEFAULT_MESSAGES.keys())
 def log(*a):
     global LOG_SEQ
     line = f"[{time.strftime('%H:%M:%S')}] " + " ".join(str(x) for x in a)
@@ -152,6 +187,18 @@ th{color:#8b949e;font-weight:400}
 .adm-add{display:flex;gap:6px;margin-top:6px}
 .adm-add input{width:auto;flex:1;min-width:0}
 #msg{margin-top:10px;color:#3fb950;font-size:13px;min-height:20px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px}
+#dlg{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;width:640px;max-width:100%;margin:20px 0}
+#dlg h2{margin:0 0 12px;font-size:16px}
+.mrow{border-bottom:1px solid #21262d;padding:10px 0}
+.mrow .k{color:#58a6ff;font-weight:600;font-size:13px;margin-bottom:4px}
+.mrow textarea{width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:6px;font-size:13px;font-family:inherit;resize:vertical}
+.mimg{display:flex;align-items:center;gap:8px;margin-top:4px}
+.mimg img{max-width:120px;max-height:80px;border-radius:4px;border:1px solid #30363d}
+.mimg .ph{color:#8b949e;font-size:12px}
+.mimg input[type=file]{display:none}
+.mimg button{padding:2px 8px;font-size:12px}
+#dlg .foot{margin-top:12px;display:flex;gap:8px}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
 .row input{flex:1;min-width:120px}
 </style></head><body>
@@ -170,6 +217,16 @@ th{color:#8b949e;font-weight:400}
 <table><thead><tr><th>名字</th><th>昵称</th><th>app_id</th><th>状态</th><th>有效期至</th><th>操作</th></tr></thead>
 <tbody id="tb"></tbody></table>
 <div id="msg"></div>
+<div id="overlay">
+  <div id="dlg">
+    <h2>话术定制 - <span id="dlg-name" style="color:#3fb950"></span></h2>
+    <div id="dlg-body"></div>
+    <div class="foot">
+      <button onclick="saveMsgs()">保存</button>
+      <button onclick="closeDlg()">关闭</button>
+    </div>
+  </div>
+</div>
 <script>
 let pw=localStorage.getItem('pw')||'';
 document.getElementById('pw').value=pw;
@@ -206,6 +263,8 @@ async function load(){
     if(r.status===401){say('密码错误',1);return}
     const j=await r.json();
     document.getElementById('st').textContent='已连接 · '+j.bots.length+' 个机器人';
+    window.botMsgs={};
+    j.bots.forEach(b=>{window.botMsgs[b.name]=b.messages||{}});
     document.getElementById('tb').innerHTML=j.bots.map(b=>`<tr>
       <td>${b.name}</td><td>${b.bot_username?('<b style="color:#58a6ff">'+b.bot_username+'</b>'):'<span style="color:#8b949e">-</span>'}</td><td>${b.app_id}</td>
       <td><span class="badge ${b.running?'on':(b.expired?'warn':'off')}">${b.running?'运行中':(b.expired?'已过期':'已停止')}</span></td>
@@ -214,6 +273,7 @@ async function load(){
         ${b.enabled?'<button onclick="act(&#39;stop&#39;,&#39;'+b.name+'&#39;)">停止</button>':'<button onclick="act(&#39;start&#39;,&#39;'+b.name+'&#39;)">启动</button>'}
         <button onclick="renew('${b.name}')">续期</button>
         <button onclick="act('permanent','${b.name}')" title="清除有效期">永久</button>
+        <button onclick="openDlg('${b.name}')">话术</button>
         <details class="adm" ontoggle="if(this.open)admins('${b.name}')"><summary>管理员</summary>
         <div class="adm-box">
           <div id="adm-m${b.name}"></div>
@@ -233,6 +293,48 @@ function addBot(){
   const days=document.getElementById('a_days').value;
   if(!name||!app_id||!app_secret){say('名字/app_id/app_secret 必填',1);return}
   api({action:'add',name,app_id,app_secret,days});
+}
+const MSG_LABEL={welcome:'欢迎语',success:'解卡成功',success_cached:'解卡成功(缓存命中)',fail:'解卡失败',bad_link:'链接格式错误',busy:'忙碌提示',whoami:'查询openid',internal:'内部错误',no_admin:'无权限提示',admin_usage:'管理员用法',admin_added:'已加管理员',admin_removed:'已移除管理员',admin_empty:'管理员空列表',updating:'更新中',update_start:'更新开始',update_fail:'更新失败',update_ok:'更新成功',restarting:'重启中',help:'帮助菜单',stop:'停机提示'};
+let curName='',curMsgs={};
+function openDlg(n){
+  curName=n;
+  document.getElementById('dlg-name').textContent=n;
+  const j=botMsgs[n]||{};
+  curMsgs=JSON.parse(JSON.stringify(j));
+  const body=document.getElementById('dlg-body');
+  body.innerHTML=Object.keys(MSG_LABEL).map(k=>{
+    const m=curMsgs[k]||{text:'',img:''};
+    const img=(m.img?`<div class="mimg"><img src="/img/${m.img}" onerror="this.style.display='none'"><span class="ph">${m.img}</span><button class="danger" onclick="rmImg('${k}')">删图</button></div>`:`<div class="mimg"><span class="ph">(无图片)</span></div>`);
+    return `<div class="mrow">
+      <div class="k">${MSG_LABEL[k]} <span style="color:#8b949e;font-weight:400">(${k})</span></div>
+      <textarea rows="3" id="mt-${k}">${(m.text||'').replace(/</g,'&lt;')}</textarea>
+      ${img}
+      <div class="mimg"><input type="file" id="mf-${k}" accept="image/*" onchange="upImg('${k}',this)"><button onclick="document.getElementById('mf-${k}').click()">上传图片</button></div>
+    </div>`;
+  }).join('');
+  document.getElementById('overlay').style.display='flex';
+}
+function closeDlg(){document.getElementById('overlay').style.display='none'}
+async function upImg(k,inp){
+  const f=inp.files&&inp.files[0];
+  if(!f)return;
+  const fd=new FormData();fd.append('img',f);
+  const r=await fetch('/api/upload_img',{method:'POST',body:fd});
+  const j=await r.json();
+  if(j.error){say('上传失败: '+j.error,1);return}
+  curMsgs[k]=curMsgs[k]||{text:'',img:''};
+  curMsgs[k].img=j.name;
+  openDlg(curName);
+  say('图片已上传');
+}
+function rmImg(k){curMsgs[k]=curMsgs[k]||{};curMsgs[k].img='';openDlg(curName)}
+async function saveMsgs(){
+  const out={};
+  Object.keys(MSG_LABEL).forEach(k=>{
+    out[k]={text:document.getElementById('mt-'+k).value,img:(curMsgs[k]||{}).img||''};
+  });
+  await api({action:'save_messages',name:curName,messages:out});
+  closeDlg();
 }
 load();setInterval(load,10000);
 </script></body></html>"""
@@ -257,7 +359,38 @@ class LogHandler(BaseHTTPRequestHandler):
         return pw == ADMIN_PW
 
     def do_GET(self):
-        if self.path.startswith("/api/logs"):
+        if self.path.startswith("/img/"):
+            # 静态图片读取 (供 QQ 富媒体拉取)
+            name = self.path[len("/img/"):].split("?")[0]
+            name = os.path.basename(name)  # 防目录穿越
+            fp = os.path.join(IMG_DIR, name)
+            if os.path.isfile(fp):
+                ct = "image/png" if name.lower().endswith(".png") else \
+                     "image/jpeg" if name.lower().endswith((".jpg", ".jpeg")) else \
+                     "image/gif" if name.lower().endswith(".gif") else \
+                     "image/webp" if name.lower().endswith(".webp") else "application/octet-stream"
+                with open(fp, "rb") as f:
+                    body = f.read()
+                self._send(200, body, ct)
+            else:
+                self._send(404, b"{}")
+        elif self.path.startswith("/api/groups"):
+            if not self._auth():
+                self._send(401, b'{"error": "bad password"}')
+                return
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            name = (q.get("bot") or [""])[0]
+            with BOTS_LOCK:
+                bot = BOTS.get(name, {}).get("bot")
+            if not bot:
+                self._send(200, json.dumps({"groups": [], "bot": name}, ensure_ascii=False).encode())
+                return
+            groups = sorted(bot.know_groups.items(), key=lambda kv: kv[1].get("last", 0), reverse=True)
+            self._send(200, json.dumps({"groups": [
+                {"openid": g, "first": r.get("first"), "last": r.get("last"), "msgs": r.get("msgs", 0)}
+                for g, r in groups], "bot": name}, ensure_ascii=False).encode())
+        elif self.path.startswith("/api/logs"):
             try:
                 after = int(self.path.split("after=")[1].split("&")[0])
             except Exception:
@@ -291,12 +424,53 @@ class LogHandler(BaseHTTPRequestHandler):
                                        if exp else "永久"),
                         "expired": bool(exp and time.time() > exp),
                         "admins": v["cfg"].get("admins") or [],
+                        "messages": {k: (v["cfg"].get("messages", {}).get(k) or
+                                         DEFAULT_MESSAGES[k])
+                                     for k in MSG_KEYS},
                     })
             self._send(200, json.dumps({"bots": bots}, ensure_ascii=False).encode())
         else:
             self._send(404, b"{}")
 
     def do_POST(self):
+        if self.path.startswith("/api/upload_img"):
+            # 图片上传: multipart/form-data, 字段 img
+            try:
+                import cgi
+                ln = int(self.headers.get("Content-Length", 0))
+                form = cgi.FieldStorage(
+                    fp=self.rfile, headers=self.headers,
+                    environ={"REQUEST_METHOD": "POST",
+                             "CONTENT_TYPE": self.headers.get("Content-Type", ""),
+                             "CONTENT_LENGTH": str(ln)})
+                f = None
+                for _it in (getattr(form, "list", None) or []):
+                    if getattr(_it, "name", None) == "img":
+                        f = _it
+                        break
+                if f is None or not getattr(f, "filename", None):
+                    self._send(400, b'{"error": "no img"}')
+                    return
+                fn = f.filename
+                ext = os.path.splitext(fn)[1].lower() or ".jpg"
+                if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
+                    self._send(400, b'{"error": "unsupported type"}')
+                    return
+                if not os.path.isdir(IMG_DIR):
+                    os.makedirs(IMG_DIR)
+                import uuid
+                name = uuid.uuid4().hex[:12] + ext
+                raw = f.file.read()
+                if len(raw) > 20 * 1024 * 1024:
+                    self._send(400, b'{"error": "too large"}')
+                    return
+                with open(os.path.join(IMG_DIR, name), "wb") as fo:
+                    fo.write(raw)
+                self._send(200, json.dumps({"name": name}, ensure_ascii=False).encode())
+            except Exception as e:
+                self._send(500, json.dumps({"error": f"{type(e).__name__}: {e}"},
+                                           ensure_ascii=False).encode())
+            return
         if not self.path.startswith("/api/admin"):
             self._send(404, b"{}")
             return
@@ -404,6 +578,57 @@ def handle_admin(req):
             BOTS[name]["cfg"]["expire_ts"] = None
         save_bots()
         return {"ok": True, "msg": f"{name} 已设为永久"}
+    if act == "push":
+        # 主动向指定群发送文本
+        with BOTS_LOCK:
+            bot = BOTS[name].get("bot")
+        if not bot:
+            return {"error": f"机器人 {name} 未在线, 无法推送"}
+        gid = (req.get("gid") or "").strip()
+        text = (req.get("text") or "").strip()
+        ok, err = bot.push_group(gid, text)
+        return {"ok": ok, "msg": err}
+    if act == "get_messages":
+        with BOTS_LOCK:
+            msgs = {k: (BOTS[name]["cfg"].get("messages", {}).get(k) or
+                        DEFAULT_MESSAGES[k]) for k in MSG_KEYS}
+        return {"ok": True, "messages": msgs}
+    if act == "save_messages":
+        msgs_in = req.get("messages") or {}
+        # 逐字段合并, 空文本回退默认值
+        with BOTS_LOCK:
+            saved = BOTS[name]["cfg"].setdefault("messages", {})
+            for k in MSG_KEYS:
+                mv = msgs_in.get(k) or {}
+                item = {}
+                t = (mv.get("text") or "").strip()
+                item["text"] = t if t else DEFAULT_MESSAGES[k]["text"]
+                item["img"] = (mv.get("img") or "").strip()
+                saved[k] = item
+        save_bots()
+        # 热更新: 若 bot 实例已在跑, 直接刷新内存
+        with BOTS_LOCK:
+            bot = BOTS[name].get("bot")
+        if bot:
+            bot.msgs = {k: {**DEFAULT_MESSAGES[k], **saved.get(k, {})}
+                        for k in MSG_KEYS}
+        return {"ok": True, "msg": f"{name} 话术已保存"}
+    if act == "rm_img":
+        img = (req.get("img") or "").strip()
+        if not img or os.path.basename(img) != img:
+            return {"error": "非法文件名"}
+        fp = os.path.join(IMG_DIR, img)
+        if os.path.isfile(fp):
+            os.remove(fp)
+        # 从所有 bot 的 messages 里清掉该 img 引用
+        with BOTS_LOCK:
+            for n, v in BOTS.items():
+                for k in MSG_KEYS:
+                    m = v["cfg"].get("messages", {}).get(k)
+                    if m and m.get("img") == img:
+                        m["img"] = ""
+        save_bots()
+        return {"ok": True, "msg": "已删除图片"}
     return {"error": f"未知操作 {act}"}
 
 
@@ -520,6 +745,21 @@ class QQBot:
         self.user_busy = set()       # 正在求解的 openid
         self.busy_lock = threading.Lock()
         self.reply_seq = {}          # msg_id -> 已用 msg_seq(同消息多次回复需递增)
+        self.push_seq = 0            # 主动推送用 msg_seq 递增(无 msg_id)
+        self.push_lock = threading.Lock()
+        self.know_groups = {}        # group_openid -> {first,last,msgs}; 群记录(方案A)
+        gdir = os.path.join(HERE, "groups")
+        os.makedirs(gdir, exist_ok=True)
+        gfile = os.path.join(gdir, self.name + ".json")
+        try:
+            if os.path.exists(gfile):
+                with open(gfile, encoding="utf-8") as f:
+                    self.know_groups = json.load(f)
+        except Exception as e:
+            log("[groups] 加载群记录失败(%s): %s" % (self.name, e))
+        # 深度定制话术: 合并默认值, 后台改过的存 cfg["messages"]
+        self.msgs = {k: {**DEFAULT_MESSAGES[k], **cfg.get("messages", {}).get(k, {})}
+                     for k in MSG_KEYS}
 
     def stop(self):
         self.stop_event.set()
@@ -544,9 +784,51 @@ class QQBot:
             return r
         return r
 
-    def reply(self, scene, target, msg_id, text, at=None):
+    def tmpl(self, key, **kw):
+        """取话术文本并渲染占位符"""
+        return self.msgs[key]["text"].format(**kw)
+    def send_image(self, scene, target, msg_id, img):
+        """上传本地托管图片到 QQ -> file_info -> msg_type=7 发图。
+        img: 文件名(imgs/ 下)。返回 True/False。"""
+        if not img:
+            return False
+        mail_url = f"http://45.192.98.5:8080/img/{img}"
+        try:
+            # 场景上传: c2c=/v2/users/{id}/files, group=/v2/groups/{id}/files
+            up_path = (f"/v2/users/{target}/files" if scene == "c2c"
+                       else f"/v2/groups/{target}/files")
+            r = self.api_post(up_path, {"file_type": 1, "url": mail_url})
+            if r.status_code != 200:
+                log(f"[img] 上传失败 {scene} HTTP {r.status_code}: {r.text[:150]}")
+                return False
+            fi = (r.json() or {}).get("file_info")
+            if not fi:
+                log(f"[img] 无 file_info: {r.text[:150]}")
+                return False
+        except Exception as e:
+            log(f"[img] 上传异常: {type(e).__name__}: {e}")
+            return False
+        # 发图
+        seq = self.reply_seq.get(msg_id, 0) + 1
+        body = {"msg_type": 7, "media": {"file_info": fi},
+                "msg_id": msg_id, "msg_seq": seq}
+        path = (f"/v2/users/{target}/messages" if scene == "c2c"
+                else f"/v2/groups/{target}/messages")
+        try:
+            r = self.api_post(path, body)
+        except Exception as e:
+            log(f"[img] 发送异常: {type(e).__name__}: {e}")
+            return False
+        if r.status_code == 200:
+            self.reply_seq[msg_id] = seq
+            log(f"[img] ok {scene} seq={seq}")
+            return True
+        log(f"[img] 发送失败 {scene} HTTP {r.status_code}: {r.text[:150]}")
+        return False
+    def reply(self, scene, target, msg_id, text, at=None, img=None):
         """scene: 'c2c' | 'group'; target: openid / group_openid
-        at: 要@的用户 openid(仅群聊生效, 私聊@无意义)"""
+        at: 要@的用户 openid(仅群聊生效, 私聊@无意义)
+        img: 图片文件名(imgs/ 下), 先发文本再发图"""
         seq = self.reply_seq.get(msg_id, 0) + 1
         # 群聊带@: 先试 markdown(<@!openid> 可高亮@), 无权限则降级纯文本
         if scene == "group" and at:
@@ -556,18 +838,77 @@ class QQBot:
             if r.status_code == 200:
                 self.reply_seq[msg_id] = seq
                 log(f"[reply] ok {scene} md seq={seq} len={len(text)} text={text[:200]!r}")
-                return
-            log(f"[reply] md HTTP {r.status_code}, 降级纯文本: {r.text[:120]}")
-            seq += 1
-        body = {"msg_type": 0, "content": text, "msg_id": msg_id, "msg_seq": seq}
-        path = (f"/v2/users/{target}/messages" if scene == "c2c"
-                else f"/v2/groups/{target}/messages")
-        r = self.api_post(path, body)
-        if r.status_code == 200:
-            self.reply_seq[msg_id] = seq
-            log(f"[reply] ok {scene} seq={seq} len={len(text)} text={text[:200]!r}")
+            else:
+                log(f"[reply] md HTTP {r.status_code}, 降级纯文本: {r.text[:120]}")
+                seq += 1
+                body = {"msg_type": 0, "content": text, "msg_id": msg_id, "msg_seq": seq}
+                r2 = self.api_post(f"/v2/groups/{target}/messages", body)
+                if r2.status_code == 200:
+                    self.reply_seq[msg_id] = seq
+                    log(f"[reply] ok {scene} seq={seq} len={len(text)} text={text[:200]!r}")
         else:
-            log(f"[reply] FAIL {scene} HTTP {r.status_code}: {r.text[:200]}")
+            body = {"msg_type": 0, "content": text, "msg_id": msg_id, "msg_seq": seq}
+            path = (f"/v2/users/{target}/messages" if scene == "c2c"
+                    else f"/v2/groups/{target}/messages")
+            r = self.api_post(path, body)
+            if r.status_code == 200:
+                self.reply_seq[msg_id] = seq
+                log(f"[reply] ok {scene} seq={seq} len={len(text)} text={text[:200]!r}")
+            else:
+                log(f"[reply] FAIL {scene} HTTP {r.status_code}: {r.text[:200]}")
+        # 文本之后再发图片 (可选)
+        if img:
+            try:
+                self.send_image(scene, target, msg_id, img)
+            except Exception as e:
+                log(f"[img] 异常: {type(e).__name__}: {e}")
+    def msg(self, key, scene, target, msg_id, at=None, **kw):
+        """按话术 key 回复: 渲染占位符 + 附带图片(若配置)"""
+        text = self.tmpl(key, **kw)
+        img = self.msgs[key].get("img") or None
+        self.reply(scene, target, msg_id, text, at=at, img=img)
+
+    # ---------- 主动推送 / 群记录(方案A) ----------
+    def save_groups(self):
+        """持久化记录的群列表"""
+        try:
+            gdir = os.path.join(HERE, "groups")
+            os.makedirs(gdir, exist_ok=True)
+            gfile = os.path.join(gdir, self.name + ".json")
+            tmp = gfile + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.know_groups, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, gfile)
+        except Exception as e:
+            log("[groups] 保存失败(%s): %s" % (self.name, e))
+
+    def record_group(self, gid):
+        """记录一次群消息(用于追踪机器人被拉入的群)"""
+        if not gid:
+            return
+        now = time.time()
+        with self.push_lock:
+            rec = self.know_groups.setdefault(gid, {"first": 0, "last": 0, "msgs": 0})
+            rec["first"] = rec["first"] or int(now)
+            rec["last"] = int(now)
+            rec["msgs"] = rec.get("msgs", 0) + 1
+
+    def push_group(self, gid, text):
+        """主动向群发纯文本消息(管理面板调用). 返回 (ok, err)"""
+        text = (text or "").strip()
+        if not gid or not text:
+            return False, "缺 group_openid 或内容"
+        with self.push_lock:
+            self.push_seq += 1
+            seq = self.push_seq
+        body = {"msg_type": 0, "content": text, "msg_seq": seq}
+        r = self.api_post(f"/v2/groups/{gid}/messages", body)
+        if r.status_code == 200:
+            log(f"[push] ok {self.name} -> {gid}: {text[:100]!r}")
+            return True, "已推送: " + text[:60]
+        err = r.text[:200]
+        log(f"[push] FAIL {self.name} {gid} HTTP {r.status_code}: {err}")
+        return False, f"推送失败 HTTP {r.status_code}: {err}"
 
     # ---------- 配置/权限 ----------
     def is_admin(self, openid):
@@ -585,6 +926,7 @@ class QQBot:
             scene, target = "c2c", (d.get("author") or {}).get("id") or d.get("user_openid")
         elif t == "GROUP_AT_MESSAGE_CREATE":
             scene, target = "group", d.get("group_openid")
+            self.record_group(target)
         else:
             return
         openid = (d.get("author") or {}).get("id") or d.get("user_openid") or target
@@ -592,18 +934,18 @@ class QQBot:
         msg_id = d.get("id")
         log(f"[msg] {t} from {openid}: {content[:50]}")
         if not self.enabled:
-            self.reply(scene, target, msg_id, STOP_TEXT)
+            self.msg("stop", scene, target, msg_id)
             return
         # 必须以 /key 命令开头
         if not content.startswith("/"):
-            self.reply(scene, target, msg_id, HELP_TEXT)
+            self.msg("help", scene, target, msg_id)
             return
 
         if content.startswith("/help") or content.startswith("/菜单"):
-            self.reply(scene, target, msg_id, HELP_TEXT)
+            self.msg("help", scene, target, msg_id)
             return
         if content.startswith("/whoami"):
-            self.reply(scene, target, msg_id, f"你的 openid:\n{openid}")
+            self.msg("whoami", scene, target, msg_id, openid=openid)
             return
         if content.startswith("/key"):
             self.cmd_key(scene, target, msg_id, openid, content)
@@ -620,13 +962,12 @@ class QQBot:
         if content.startswith("/admin"):
             self.require_admin(scene, target, msg_id, openid, lambda s, t, m: self.cmd_admin(s, t, m, content))
             return
-        self.reply(scene, target, msg_id, HELP_TEXT)
+        self.msg("help", scene, target, msg_id)
 
     def require_admin(self, scene, target, msg_id, openid, fn):
         if not self.is_admin(openid):
             log(f"[admin] 拒绝非管理员 {openid}")
-            self.reply(scene, target, msg_id,
-                       "仅管理员可用 (用 /whoami 查 openid, 让站长加白)")
+            self.msg("no_admin", scene, target, msg_id)
             return
         fn(scene, target, msg_id)
 
@@ -642,7 +983,7 @@ class QQBot:
         m = URL_RE.search(content)
         if not m:
             log(f"[key] 无链接 {openid}")
-            self.reply(scene, target, msg_id, HELP_TEXT)
+            self.msg("help", scene, target, msg_id)
             return
         url = m.group(0)
 
@@ -650,7 +991,7 @@ class QQBot:
         with self.busy_lock:
             if openid in self.user_busy:
                 log(f"[key] 忙碌拒绝 {openid} (已有任务在跑)")
-                self.reply(scene, target, msg_id, "上一条还在解, 稍等~")
+                self.msg("busy", scene, target, msg_id)
                 return
             self.user_busy.add(openid)
 
@@ -663,32 +1004,30 @@ class QQBot:
                 ticket = extract_ticket(url)
             except Exception:
                 log(f"[solve] ticket提取失败 {openid}: {url[:60]}")
-                self.reply(scene, target, msg_id, "链接格式不对, 发完整的 auth 链接")
+                self.msg("bad_link", scene, target, msg_id)
                 return
             key, cached, _ = cache_get(ticket)
             if cached:
                 log(f"[solve] 命中缓存 {openid} ticket={ticket[:16]}")
-                self.reply(scene, target, msg_id,
-                           f"解卡成功\n{key}\n\nby CUA", at=openid)
+                self.msg("success_cached", scene, target, msg_id, at=openid, key=key)
                 return
             log(f"[solve] 开始求解 {openid} ticket={ticket[:16]}")
-            self.reply(scene, target, msg_id,
-                       "欢迎使用由CUA部署的解卡机器人\n正在为您解卡", at=openid)
+            self.msg("welcome", scene, target, msg_id, at=openid)
             t0 = time.time()
             key, err, st = run_solves(ticket)
             dur = time.time() - t0
             if key:
                 cache_put(ticket, key, st)
-                self.reply(scene, target, msg_id,
-                           f"解卡成功\n{key}\n用时{dur:.1f}秒\n\nby CUA", at=openid)
+                self.msg("success", scene, target, msg_id, at=openid,
+                         key=key, dur=f"{dur:.1f}")
                 log(f"[solve] 成功 {openid} 用时{dur:.1f}s ticket={ticket[:16]}")
             else:
-                self.reply(scene, target, msg_id, f"解卡失败: {err}", at=openid)
+                self.msg("fail", scene, target, msg_id, at=openid, err=err)
                 log(f"[solve] 失败 {openid} 用时{dur:.1f}s err={err}")
         except Exception as e:
             log(f"[solve] 异常: {type(e).__name__}: {e}")
             try:
-                self.reply(scene, target, msg_id, "内部错误, 稍后再试")
+                self.msg("internal", scene, target, msg_id)
             except Exception:
                 pass
         finally:
@@ -713,19 +1052,18 @@ class QQBot:
 
     def cmd_update(self, scene, target, msg_id):
         if self.updating:
-            self.reply(scene, target, msg_id, "正在更新中, 别急")
+            self.msg("updating", scene, target, msg_id)
             return
         self.updating = True
         try:
-            self.reply(scene, target, msg_id, "开始更新, 群发确认后重启...")
+            self.msg("update_start", scene, target, msg_id)
             try:
                 changed, summary = self_update()
             except Exception as e:
-                self.reply(scene, target, msg_id, f"更新失败: {e}")
+                self.msg("update_fail", scene, target, msg_id, err=str(e))
                 return
             if changed:
-                self.reply(scene, target, msg_id,
-                           f"已更新:\n{summary}\n2 秒后重启生效")
+                self.msg("update_ok", scene, target, msg_id, summary=summary)
                 time.sleep(2)
                 os._exit(EXIT_UPDATED)
             else:
@@ -734,7 +1072,7 @@ class QQBot:
             self.updating = False
 
     def cmd_restart(self, scene, target, msg_id):
-        self.reply(scene, target, msg_id, "重启中...")
+        self.msg("restarting", scene, target, msg_id)
         time.sleep(2)
         os._exit(EXIT_UPDATED)
 
@@ -743,28 +1081,29 @@ class QQBot:
         parts = (content or "").split()
         admins = self.cfg.setdefault("admins", [])
         if len(parts) < 2 or parts[1] not in ("add", "rm", "ls"):
-            self.reply(scene, target, msg_id,
-                       "用法: /admin add <openid> | /admin rm <openid> | /admin ls")
+            self.msg("admin_usage", scene, target, msg_id)
             return
         op = parts[1]
         if op == "ls":
-            self.reply(scene, target, msg_id,
-                       "\n".join(admins) if admins else "(空)")
+            if admins:
+                self.reply(scene, target, msg_id, "\n".join(admins))
+            else:
+                self.msg("admin_empty", scene, target, msg_id)
             return
         if len(parts) < 3 or not parts[2]:
-            self.reply(scene, target, msg_id, "缺少 openid")
+            self.msg("admin_usage", scene, target, msg_id)
             return
         oid = parts[2]
         if op == "add":
             if oid not in admins:
                 admins.append(oid)
                 self.save_config()
-            self.reply(scene, target, msg_id, f"已加管理员: {oid}")
+            self.msg("admin_added", scene, target, msg_id, openid=oid)
         else:  # rm
             if oid in admins:
                 admins.remove(oid)
                 self.save_config()
-            self.reply(scene, target, msg_id, f"已移除: {oid}")
+            self.msg("admin_removed", scene, target, msg_id, openid=oid)
 
     # ---------- WebSocket ----------
     def heartbeat_loop(self, interval):
@@ -876,6 +1215,7 @@ def load_config():
 
 # ================= 多实例管理器 =================
 BOTS_FILE = os.path.join(HERE, "bots.json")
+IMG_DIR = os.path.join(HERE, "imgs")
 BOTS = {}          # name -> {"cfg": {...}, "bot": QQBot, "thread": Thread, "enabled": bool}
 BOTS_LOCK = threading.Lock()
 ADMIN_PASSWORD_FILE = os.path.join(HERE, ".admin_pass")
@@ -930,6 +1270,7 @@ def stop_bot(name):
         entry["bot"], entry["thread"] = None, None
     if bot:
         bot.enabled = False
+        bot.save_groups()
         log(f"[mgr] 已软停止 {name} (在线置灰, 只回停机票)")
 
 
